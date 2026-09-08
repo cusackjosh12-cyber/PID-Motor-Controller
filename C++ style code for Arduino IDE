@@ -1,0 +1,66 @@
+#include <InterruptEncoder.h>
+InterruptEncoder encoder;   
+// PID constants
+float Kp = 3;
+float Ki = 0.03;
+float Kd = 0.08;
+// PID state
+float error, prevError = 0;
+float integral = 0;
+unsigned long prevTime = 0;
+void setup() {
+encoder.attach(D3, D5); // encoder pins
+Serial.begin(9600);
+pinMode(A5, OUTPUT); // motor pin 1
+pinMode(A3, OUTPUT); // motor pin 2
+prevTime = millis();
+}
+void loop() {
+// Read target angle from potentiometer
+int sensorValue = analogRead(A0); //Read potentiometer
+float angleT = (sensorValue / 11.375) - 180; // -180 to +180 degrees
+// Read encoder once per loop
+long encoderVal = encoder.read(); //Read encoder
+float angleC = encoderVal * 0.144; //Convert to PDF
+angleT = constrain(angleT, -170, 170); //Make it not get to extremes
+// PID timing
+unsigned long now = millis(); //Record current time
+float dt = (now - prevTime) / 1000.0; //Time between recordings in seconds
+if (dt <= 0) return; //Stops negative time
+prevTime = now; //Allows for calculation next time
+// PID error
+error = angleT - fmod(angleC, 360); //Finds error in angles
+if (error > 180) error -= 360; //makes sure the error stays consistant
+if (error < -180) error += 360;
+// Deadband
+if (abs(error) < 5) { //Allows stability at 5 degrees
+integral = 0;
+analogWrite(A3, 0);
+analogWrite(A5, 0); //Pauses
+Serial.println("Status : Pause");
+return;
+}
+// Integral with anti-windup
+integral += error * dt; //Calculates integral
+integral = constrain(integral, -100, 100); //Makes sure it doesn't get too big
+// Derivative
+float derivative = 0;
+if (abs(error) < 150) { //derivative useless at high values
+derivative = (error - prevError) / dt; //calculates derviative
+}
+prevError = error;
+// PID output
+float output = (Kp * error) + (Ki * integral) + (Kd * derivative);
+output = constrain(output, -255, 255); //Allows for accurate PWM
+// Motor drive 
+if (output > 0) {
+analogWrite(A3, output);
+analogWrite(A5, 0);
+} else {
+analogWrite(A3, 0);
+analogWrite(A5, -output);
+}
+Serial.print("T: "); Serial.print(angleT);
+Serial.print(" C: "); Serial.print(angleC);
+Serial.print(" E: "); Serial.println(error); //Debug helpers
+}
